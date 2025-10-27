@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Breakout - Arcade Game</title>
+    <style>
+        /* ==================== CSS VARIABLEN FÜR FARBANPASSUNG ==================== */
+        :root {
+            /* Haupt-Neon-Farbe */
+            --neon-primary: #00ff00;
+            --neon-glow: rgba(0, 255, 0, 0.8);
+            
+            /* Hintergrundfarben */
+            --bg-dark: #000000;
+            --bg-overlay: rgba(0, 0, 0, 0.95);
+            
+            /* UI-Farben */
+            --text-primary: #00ff00;
+            --text-secondary: #00cc00;
+            --border-color: #00ff00;
+            
+            /* Spiel-Element-Farben */
+            --paddle-color: #00ff00;
+            --ball-color: #00ff00;
+            --block-color: #00ff00;
+            --wall-color: #003300;
+        }
+
+        /* ==================== ALLGEMEINE STYLES ==================== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            text-align: center;
+            position: relative;
+            max-width: 100%;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            text-shadow: 
+                0 0 10px var(--neon-glow),
+                0 0 20px var(--neon-glow),
+                0 0 30px var(--neon-glow);
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from {
+                text-shadow: 
+                    0 0 10px var(--neon-glow),
+                    0 0 20px var(--neon-glow),
+                    0 0 30px var(--neon-glow);
+            }
+            to {
+                text-shadow: 
+                    0 0 20px var(--neon-glow),
+                    0 0 30px var(--neon-glow),
+                    0 0 40px var(--neon-glow),
+                    0 0 50px var(--neon-glow);
+            }
+        }
+
+        #gameCanvas {
+            border: 3px solid var(--border-color);
+            box-shadow: 
+                0 0 20px var(--neon-glow),
+                inset 0 0 20px rgba(0, 255, 0, 0.1);
+            background-color: var(--bg-dark);
+            cursor: none;
+            display: block;
+            margin: 20px auto;
+        }
+
+        #gameInfo {
+            display: flex;
+            justify-content: space-between;
+            max-width: 800px;
+            margin: 0 auto 20px;
+            font-size: 1.2em;
+            font-weight: bold;
+            text-shadow: 0 0 5px var(--neon-glow);
+        }
+
+        .info-item {
+            padding: 10px 20px;
+            border: 2px solid var(--border-color);
+            border-radius: 5px;
+            background-color: rgba(0, 255, 0, 0.05);
+        }
+
+        /* ==================== OVERLAY SCREENS ==================== */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-overlay);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background-color: var(--bg-dark);
+            border: 3px solid var(--border-color);
+            border-radius: 10px;
+            padding: 40px;
+            box-shadow: 
+                0 0 30px var(--neon-glow),
+                inset 0 0 20px rgba(0, 255, 0, 0.1);
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal h2 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px var(--neon-glow);
+        }
+
+        .modal p {
+            font-size: 1.2em;
+            margin-bottom: 15px;
+        }
+
+        /* ==================== BUTTONS ==================== */
+        button {
+            background-color: transparent;
+            color: var(--text-primary);
+            border: 2px solid var(--border-color);
+            padding: 15px 30px;
+            font-size: 1.2em;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            margin: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 10px var(--neon-glow);
+        }
+
+        button:hover {
+            background-color: var(--neon-primary);
+            color: var(--bg-dark);
+            box-shadow: 0 0 20px var(--neon-glow);
+            transform: scale(1.05);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        /* ==================== INPUT FIELDS ==================== */
+        input[type="text"] {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            border: 2px solid var(--border-color);
+            padding: 15px;
+            font-size: 1.2em;
+            font-family: 'Courier New', monospace;
+            width: 100%;
+            max-width: 400px;
+            margin: 20px 0;
+            text-align: center;
+            box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.1);
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            box-shadow: 
+                inset 0 0 10px rgba(0, 255, 0, 0.2),
+                0 0 10px var(--neon-glow);
+        }
+
+        /* ==================== LEADERBOARD ==================== */
+        #leaderboardList {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+        }
+
+        #leaderboardList li {
+            padding: 15px;
+            margin: 10px 0;
+            border: 2px solid var(--border-color);
+            border-radius: 5px;
+            background-color: rgba(0, 255, 0, 0.05);
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.1em;
+            transition: all 0.3s ease;
+        }
+
+        #leaderboardList li:hover {
+            background-color: rgba(0, 255, 0, 0.1);
+            box-shadow: 0 0 10px var(--neon-glow);
+        }
+
+        #leaderboardList li:first-child {
+            border-color: #FFD700;
+            color: #FFD700;
+            font-size: 1.3em;
+            font-weight: bold;
+        }
+
+        .rank {
+            font-weight: bold;
+            margin-right: 15px;
+        }
+
+        .player-name {
+            flex-grow: 1;
+            text-align: left;
+        }
+
+        .score {
+            font-weight: bold;
+        }
+
+        /* ==================== START SCREEN ==================== */
+        #startScreen .instructions {
+            margin: 30px 0;
+            text-align: left;
+            font-size: 1.1em;
+            line-height: 1.8;
+        }
+
+        #startScreen .instructions li {
+            margin: 10px 0;
+        }
+
+        /* ==================== RESPONSIVE ==================== */
+        @media (max-width: 900px) {
+            h1 {
+                font-size: 2em;
+                letter-spacing: 3px;
+            }
+
+            #gameInfo {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .modal {
+                padding: 20px;
+            }
+
+            .modal h2 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <h1>NEON BREAKOUT</h1>
+        
+        <!-- Spiel-Informationen -->
+        <div id="gameInfo">
+            <div class="info-item">SCORE: <span id="scoreDisplay">0</span></div>
+            <div class="info-item">LIVES: <span id="livesDisplay">3</span></div>
+            <div class="info-item">LEVEL: <span id="levelDisplay">1</span></div>
+        </div>
+
+        <!-- Canvas für das Spiel -->
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <!-- Buttons -->
+        <div>
+            <button id="showLeaderboardBtn">RANGLISTE ANZEIGEN</button>
+            <button id="newGameBtn" style="display: none;">NEUES SPIEL</button>
+        </div>
+    </div>
+
+    <!-- Start Screen Overlay -->
+    <div id="startScreen" class="overlay active">
+        <div class="modal">
+            <h2>WILLKOMMEN BEI NEON BREAKOUT</h2>
+            <div class="instructions">
+                <p><strong>SPIELANLEITUNG:</strong></p>
+                <ul>
+                    <li>🖱️ Bewege die Maus, um das Paddle zu steuern</li>
+                    <li>🎯 Zerstöre alle Blöcke, um das Level zu schaffen</li>
+                    <li>⚡ Jeder Block gibt dir Punkte</li>
+                    <li>❤️ Du hast 3 Leben - lass den Ball nicht fallen!</li>
+                    <li>🏆 Erreiche einen Highscore und komm in die Rangliste!</li>
+                </ul>
+            </div>
+            <button id="startGameBtn">SPIEL STARTEN</button>
+            <button id="viewLeaderboardBtn">RANGLISTE ANZEIGEN</button>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="overlay">
+        <div class="modal">
+            <h2>GAME OVER</h2>
+            <p>Dein Endpunktestand: <span id="finalScore">0</span></p>
+            <div id="highscoreEntry">
+                <p>🎉 Neuer Highscore! Trage deinen Namen ein:</p>
+                <input type="text" id="playerNameInput" maxlength="20" placeholder="Dein Name">
+                <div>
+                    <button id="submitScoreBtn">SPEICHERN</button>
+                </div>
+            </div>
+            <div id="noHighscore" style="display: none;">
+                <p>Versuch es nochmal, um in die Rangliste zu kommen!</p>
+            </div>
+            <button id="playAgainBtn">NOCHMAL SPIELEN</button>
+            <button id="viewLeaderboardFromGameOverBtn">RANGLISTE ANZEIGEN</button>
+        </div>
+    </div>
+
+    <!-- Leaderboard Screen -->
+    <div id="leaderboardScreen" class="overlay">
+        <div class="modal">
+            <h2>🏆 RANGLISTE - TOP 10 🏆</h2>
+            <ol id="leaderboardList">
+                <!-- Wird dynamisch gefüllt -->
+            </ol>
+            <button id="closeLeaderboardBtn">SCHLIESSEN</button>
+            <button id="clearLeaderboardBtn">RANGLISTE LÖSCHEN</button>
+        </div>
+    </div>
+
+    <!-- ==================== JAVASCRIPT GAME LOGIC ==================== -->
+    <script>
+        // ==================== CANVAS & CONTEXT ====================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // ==================== GAME STATE ====================
+        let gameState = 'start'; // 'start', 'playing', 'paused', 'gameOver'
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        let animationId;
+
+        // ==================== PADDLE ====================
+        const paddle = {
+            width: 120,
+            height: 15,
+            x: canvas.width / 2 - 60,
+            y: canvas.height - 30,
+            speed: 8,
+            dx: 0
+        };
+
+        // ==================== BALL ====================
+        const ball = {
+            radius: 8,
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            dx: 4,
+            dy: -4,
+            speed: 4
+        };
+
+        // ==================== BLOCKS ====================
+        const blockConfig = {
+            rows: 6,
+            cols: 10,
+            width: 70,
+            height: 25,
+            padding: 10,
+            offsetTop: 60,
+            offsetLeft: 35
+        };
+
+        let blocks = [];
+
+        // ==================== LEADERBOARD ====================
+        const LEADERBOARD_KEY = 'breakoutLeaderboard';
+        const MAX_LEADERBOARD_ENTRIES = 10;
+
+        // ==================== INITIALIZATION ====================
+        function init() {
+            createBlocks();
+            resetBall();
+            resetPaddle();
+            score = 0;
+            lives = 3;
+            level = 1;
+            updateDisplay();
+        }
+
+        function createBlocks() {
+            blocks = [];
+            for (let row = 0; row < blockConfig.rows; row++) {
+                for (let col = 0; col < blockConfig.cols; col++) {
+                    blocks.push({
+                        x: blockConfig.offsetLeft + col * (blockConfig.width + blockConfig.padding),
+                        y: blockConfig.offsetTop + row * (blockConfig.height + blockConfig.padding),
+                        width: blockConfig.width,
+                        height: blockConfig.height,
+                        status: 1, // 1 = aktiv, 0 = zerstört
+                        points: (6 - row) * 10 // Obere Reihen geben mehr Punkte
+                    });
+                }
+            }
+        }
+
+        function resetBall() {
+            ball.x = canvas.width / 2;
+            ball.y = canvas.height - 60;
+            ball.dx = (Math.random() > 0.5 ? 1 : -1) * ball.speed;
+            ball.dy = -ball.speed;
+        }
+
+        function resetPaddle() {
+            paddle.x = canvas.width / 2 - paddle.width / 2;
+        }
+
+        function updateDisplay() {
+            document.getElementById('scoreDisplay').textContent = score;
+            document.getElementById('livesDisplay').textContent = lives;
+            document.getElementById('levelDisplay').textContent = level;
+        }
+
+        // ==================== MOUSE CONTROL ====================
+        let mouseX = canvas.width / 2;
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+        });
+
+        // ==================== DRAWING FUNCTIONS ====================
+        function drawPaddle() {
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--paddle-color');
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = getComputedStyle(document.documentElement).getPropertyValue('--neon-glow');
+            ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+            ctx.shadowBlur = 0;
+        }
+
+        function drawBall() {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ball-color');
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = getComputedStyle(document.documentElement).getPropertyValue('--neon-glow');
+            ctx.fill();
+            ctx.closePath();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawBlocks() {
+            blocks.forEach(block => {
+                if (block.status === 1) {
+                    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--block-color');
+                    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--border-color');
+                    ctx.lineWidth = 2;
+                    
+                    // Block mit Glow-Effekt
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = getComputedStyle(document.documentElement).getPropertyValue('--neon-glow');
+                    ctx.fillRect(block.x, block.y, block.width, block.height);
+                    ctx.strokeRect(block.x, block.y, block.width, block.height);
+                    ctx.shadowBlur = 0;
+                }
+            });
+        }
+
+        function drawWalls() {
+            ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--wall-color');
+            ctx.lineWidth = 5;
+            ctx.strokeRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // ==================== COLLISION DETECTION ====================
+        function detectCollisions() {
+            // Wand-Kollisionen
+            if (ball.x + ball.radius > canvas.width || ball.x - ball.radius < 0) {
+                ball.dx *= -1;
+            }
+            if (ball.y - ball.radius < 0) {
+                ball.dy *= -1;
+            }
+
+            // Ball fällt unten raus
+            if (ball.y + ball.radius > canvas.height) {
+                lives--;
+                updateDisplay();
+                
+                if (lives <= 0) {
+                    gameOver();
+                } else {
+                    resetBall();
+                    resetPaddle();
+                }
+            }
+
+            // Paddle-Kollision
+            if (
+                ball.y + ball.radius > paddle.y &&
+                ball.x > paddle.x &&
+                ball.x < paddle.x + paddle.width &&
+                ball.dy > 0
+            ) {
+                // Winkel basierend auf Treffpunkt
+                let hitPos = (ball.x - paddle.x) / paddle.width; // 0 bis 1
+                let angle = (hitPos - 0.5) * Math.PI / 3; // -60° bis +60°
+                
+                let speed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
+                ball.dx = speed * Math.sin(angle);
+                ball.dy = -speed * Math.cos(angle);
+            }
+
+            // Block-Kollisionen
+            blocks.forEach(block => {
+                if (block.status === 1) {
+                    if (
+                        ball.x + ball.radius > block.x &&
+                        ball.x - ball.radius < block.x + block.width &&
+                        ball.y + ball.radius > block.y &&
+                        ball.y - ball.radius < block.y + block.height
+                    ) {
+                        ball.dy *= -1;
+                        block.status = 0;
+                        score += block.points;
+                        updateDisplay();
+
+                        // Level geschafft?
+                        if (blocks.every(b => b.status === 0)) {
+                            levelComplete();
+                        }
+                    }
+                }
+            });
+        }
+
+        // ==================== GAME UPDATE ====================
+        function update() {
+            if (gameState !== 'playing') return;
+
+            // Paddle-Bewegung (folgt der Maus)
+            paddle.x = mouseX - paddle.width / 2;
+
+            // Paddle in Canvas-Grenzen halten
+            if (paddle.x < 0) paddle.x = 0;
+            if (paddle.x + paddle.width > canvas.width) paddle.x = canvas.width - paddle.width;
+
+            // Ball-Bewegung
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+
+            // Kollisionen prüfen
+            detectCollisions();
+        }
+
+        // ==================== GAME RENDERING ====================
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw game elements
+            drawWalls();
+            drawBlocks();
+            drawPaddle();
+            drawBall();
+        }
+
+        // ==================== GAME LOOP ====================
+        function gameLoop() {
+            update();
+            draw();
+            animationId = requestAnimationFrame(gameLoop);
+        }
+
+        // ==================== LEVEL MANAGEMENT ====================
+        function levelComplete() {
+            gameState = 'paused';
+            level++;
+            updateDisplay();
+
+            // Erhöhe Schwierigkeit
+            ball.speed += 0.5;
+            
+            // Neues Level starten
+            setTimeout(() => {
+                createBlocks();
+                resetBall();
+                resetPaddle();
+                gameState = 'playing';
+            }, 2000);
+        }
+
+        // ==================== GAME OVER ====================
+        function gameOver() {
+            gameState = 'gameOver';
+            cancelAnimationFrame(animationId);
+
+            document.getElementById('finalScore').textContent = score;
+            
+            // Prüfe ob Highscore
+            if (isHighscore(score)) {
+                document.getElementById('highscoreEntry').style.display = 'block';
+                document.getElementById('noHighscore').style.display = 'none';
+                document.getElementById('playerNameInput').value = '';
+                document.getElementById('playerNameInput').focus();
+            } else {
+                document.getElementById('highscoreEntry').style.display = 'none';
+                document.getElementById('noHighscore').style.display = 'block';
+            }
+
+            document.getElementById('gameOverScreen').classList.add('active');
+            document.getElementById('newGameBtn').style.display = 'inline-block';
+        }
+
+        // ==================== LEADERBOARD FUNCTIONS ====================
+        function getLeaderboard() {
+            const data = localStorage.getItem(LEADERBOARD_KEY);
+            return data ? JSON.parse(data) : [];
+        }
+
+        function saveLeaderboard(leaderboard) {
+            localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(leaderboard));
+        }
+
+        function isHighscore(score) {
+            const leaderboard = getLeaderboard();
+            return leaderboard.length < MAX_LEADERBOARD_ENTRIES || 
+                   score > leaderboard[leaderboard.length - 1].score;
+        }
+
+        function addToLeaderboard(name, score) {
+            let leaderboard = getLeaderboard();
+            
+            leaderboard.push({
+                name: name || 'Anonym',
+                score: score,
+                date: new Date().toLocaleDateString('de-DE')
+            });
+
+            // Sortieren nach Score (absteigend)
+            leaderboard.sort((a, b) => b.score - a.score);
+
+            // Nur Top 10 behalten
+            leaderboard = leaderboard.slice(0, MAX_LEADERBOARD_ENTRIES);
+
+            saveLeaderboard(leaderboard);
+        }
+
+        function displayLeaderboard() {
+            const leaderboard = getLeaderboard();
+            const list = document.getElementById('leaderboardList');
+            list.innerHTML = '';
+
+            if (leaderboard.length === 0) {
+                list.innerHTML = '<li style="justify-content: center;">Noch keine Einträge vorhanden</li>';
+                return;
+            }
+
+            leaderboard.forEach((entry, index) => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span class="rank">#${index + 1}</span>
+                    <span class="player-name">${entry.name}</span>
+                    <span class="score">${entry.score} Punkte</span>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        function clearLeaderboard() {
+            if (confirm('Möchtest du wirklich die gesamte Rangliste löschen?')) {
+                localStorage.removeItem(LEADERBOARD_KEY);
+                displayLeaderboard();
+            }
+        }
+
+        // ==================== EVENT LISTENERS ====================
+        
+        // Start Game
+        document.getElementById('startGameBtn').addEventListener('click', () => {
+            document.getElementById('startScreen').classList.remove('active');
+            init();
+            gameState = 'playing';
+            gameLoop();
+        });
+
+        // Submit Score
+        document.getElementById('submitScoreBtn').addEventListener('click', () => {
+            const name = document.getElementById('playerNameInput').value.trim();
+            if (name) {
+                addToLeaderboard(name, score);
+                document.getElementById('gameOverScreen').classList.remove('active');
+                showLeaderboard();
+            } else {
+                alert('Bitte gib einen Namen ein!');
+            }
+        });
+
+        // Enter-Taste für Score-Eingabe
+        document.getElementById('playerNameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('submitScoreBtn').click();
+            }
+        });
+
+        // Play Again
+        document.getElementById('playAgainBtn').addEventListener('click', () => {
+            document.getElementById('gameOverScreen').classList.remove('active');
+            init();
+            gameState = 'playing';
+            gameLoop();
+        });
+
+        // New Game Button
+        document.getElementById('newGameBtn').addEventListener('click', () => {
+            init();
+            gameState = 'playing';
+            gameLoop();
+        });
+
+        // Show Leaderboard Buttons
+        function showLeaderboard() {
+            displayLeaderboard();
+            document.getElementById('leaderboardScreen').classList.add('active');
+        }
+
+        document.getElementById('showLeaderboardBtn').addEventListener('click', showLeaderboard);
+        document.getElementById('viewLeaderboardBtn').addEventListener('click', () => {
+            showLeaderboard();
+            document.getElementById('startScreen').classList.remove('active');
+        });
+        document.getElementById('viewLeaderboardFromGameOverBtn').addEventListener('click', () => {
+            showLeaderboard();
+            document.getElementById('gameOverScreen').classList.remove('active');
+        });
+
+        // Close Leaderboard
+        document.getElementById('closeLeaderboardBtn').addEventListener('click', () => {
+            document.getElementById('leaderboardScreen').classList.remove('active');
+        });
+
+        // Clear Leaderboard
+        document.getElementById('clearLeaderboardBtn').addEventListener('click', clearLeaderboard);
+
+        // ==================== INITIALIZE ON LOAD ====================
+        window.addEventListener('load', () => {
+            init();
+            draw(); // Initial draw
+        });
+
+        // Prevent context menu on canvas
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    </script>
+</body>
+</html>
