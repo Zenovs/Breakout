@@ -84,6 +84,37 @@
     }
     #gameOverOverlay button:hover { background: #5de000; }
     
+    /* Level Complete Overlay */
+    #levelOverlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(11, 11, 11, 0.95);
+      z-index: 100;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', monospace;
+      color: #6cff00;
+      cursor: pointer;
+    }
+    #levelOverlay.show { display: flex; }
+    #levelOverlay h1 {
+      font-size: 2.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2rem;
+      margin-bottom: 1rem;
+      text-shadow: 0 0 20px #6cff00, 0 0 40px #6cff00;
+    }
+    #levelOverlay .level-info {
+      font-size: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    #levelOverlay .click-text {
+      font-size: 1.2rem;
+      animation: blink 1s step-end infinite;
+    }
+    
     /* Leaderboard */
     #leaderboard {
       background: #0b0b0b;
@@ -116,6 +147,12 @@
 
 <canvas id="game"></canvas>
 
+<div id="levelOverlay">
+  <h1 id="levelTitle">Level Complete!</h1>
+  <div class="level-info">Score: <span id="levelScore">0</span></div>
+  <div class="click-text">Click to Continue</div>
+</div>
+
 <div id="gameOverOverlay">
   <h1 id="gameOverTitle">Game Over</h1>
   <div class="final-score">Score: <span id="finalScore">0</span></div>
@@ -140,19 +177,27 @@ const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/
 let W, H, scale;
 let paddleW, paddleH, paddleX, paddleY, basePaddleW;
 let ballR, baseBallR;
-let brickRows = 5, brickCols = 8, brickW, brickH, brickPad, brickOffsetTop, brickOffsetLeft;
+let brickRows, brickCols, brickW, brickH, brickPad, brickOffsetTop, brickOffsetLeft;
 let bricks = [];
 
-// Initialize bricks array immediately to prevent crash before game starts
-for (let r = 0; r < brickRows; r++) {
-  bricks[r] = [];
-  for (let c = 0; c < brickCols; c++) {
-    bricks[r][c] = { x: 0, y: 0, alive: false };
-  }
-}
+// Level system
+let currentLevel = 1;
+const MAX_LEVEL = 5;
+let levelTransition = false;
+
+// Level configurations
+const LEVEL_CONFIGS = {
+  1: { rows: 3, cols: 6, speedMult: 1.0, paddleMult: 1.0, pattern: 'simple' },
+  2: { rows: 4, cols: 7, speedMult: 1.2, paddleMult: 1.0, pattern: 'simple' },
+  3: { rows: 5, cols: 8, speedMult: 1.4, paddleMult: 1.0, pattern: 'checkerboard' },
+  4: { rows: 6, cols: 8, speedMult: 1.6, paddleMult: 0.75, pattern: 'pyramid' },
+  5: { rows: 7, cols: 8, speedMult: 1.9, paddleMult: 0.6, pattern: 'fortress' }
+};
+
 let score = 0, lives = 3, gameOver = false, won = false;
 let gameStarted = false;
-let ballSticky = true; // Ball sticks to paddle
+let ballSticky = true;
+let baseSpeed;
 
 // Multi-ball support
 let balls = [];
@@ -167,7 +212,6 @@ const POWERUP_TYPES = {
   NARROW_PADDLE: { color: '#ff4444', duration: 10000 }
 };
 
-// SVG Path for power-up S-logo
 const POWERUP_SVG_PATH = new Path2D('M38.7837 0C17.3672 0 0 17.3672 0 38.7837C0 60.2003 17.3672 77.5675 38.7837 77.5675C60.2062 77.5675 77.5675 60.2003 77.5675 38.7837C77.5675 17.3612 60.2062 0 38.7837 0ZM35.4766 65.8469L23.9934 66.8859L24.1359 50.2372L35.5894 52.4222L35.4766 65.8469ZM50.8072 64.4575L39.3241 65.4966L39.4309 53.2356L50.8844 55.5334L50.8072 64.4575ZM61.7975 52.6834L21.9984 44.8341C16.0609 42.9103 11.3109 39.5022 11.3822 31.4034C11.5009 17.5394 23.2037 10.5212 35.3519 9.42281C48.1591 8.265 59.4403 12.1956 59.8144 26.7662L42.6253 28.3219C42.9756 26.0241 41.9959 24.5991 40.5175 23.7262C39.0391 22.7703 36.9787 22.5387 35.1559 22.6991C32.6741 22.9247 28.6187 23.9637 28.595 27.3244C28.8919 31.5816 37.3112 31.7419 45.6356 33.3391C53.9659 34.9362 62.1953 38.1366 62.1003 49.1387C62.0884 50.3797 61.9816 51.5553 61.7975 52.6834Z');
 
 let powerups = [];
@@ -203,7 +247,7 @@ function renderLeaderboard() {
 }
 
 function showGameOverScreen() {
-  document.getElementById('gameOverTitle').textContent = won ? 'You Win!' : 'Game Over';
+  document.getElementById('gameOverTitle').textContent = won ? '🎉 You Win!' : 'Game Over';
   document.getElementById('finalScore').textContent = score;
   document.getElementById('playerName').value = '';
   renderLeaderboard();
@@ -215,10 +259,37 @@ function hideGameOverScreen() {
   document.getElementById('gameOverOverlay').classList.remove('show');
 }
 
+function showLevelComplete() {
+  levelTransition = true;
+  if (currentLevel >= MAX_LEVEL) {
+    won = true;
+    gameOver = true;
+    showGameOverScreen();
+  } else {
+    document.getElementById('levelTitle').textContent = 'Level ' + currentLevel + ' Complete!';
+    document.getElementById('levelScore').textContent = score;
+    document.getElementById('levelOverlay').classList.add('show');
+  }
+}
+
+function hideLevelOverlay() {
+  document.getElementById('levelOverlay').classList.remove('show');
+  levelTransition = false;
+}
+
+document.getElementById('levelOverlay').addEventListener('click', () => {
+  hideLevelOverlay();
+  currentLevel++;
+  initLevel();
+});
+
 document.getElementById('submitScore').addEventListener('click', () => {
   const name = document.getElementById('playerName').value.trim();
   saveHighScore(name, score);
   hideGameOverScreen();
+  currentLevel = 1;
+  score = 0;
+  lives = 3;
   initGame();
 });
 
@@ -226,7 +297,6 @@ document.getElementById('playerName').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') document.getElementById('submitScore').click();
 });
 
-// Start screen handler
 document.getElementById('startOverlay').addEventListener('click', () => {
   document.getElementById('startOverlay').classList.add('hidden');
   gameStarted = true;
@@ -234,11 +304,8 @@ document.getElementById('startOverlay').addEventListener('click', () => {
 });
 
 function resize() {
-  // Fill 100% of parent container/iframe using window dimensions
   const maxWidth = window.innerWidth;
   const maxHeight = window.innerHeight;
-  
-  // Maintain aspect ratio roughly 3:4 but maximize within container
   const aspectRatio = 3 / 4;
   
   if (maxWidth / maxHeight < aspectRatio) {
@@ -251,15 +318,12 @@ function resize() {
   
   canvas.width = W;
   canvas.height = H;
-  
-  // Center canvas within container
   canvas.style.position = 'absolute';
   canvas.style.left = (window.innerWidth - W) / 2 + 'px';
   canvas.style.top = (window.innerHeight - H) / 2 + 'px';
   
   scale = Math.min(W / 480, H / 640);
   basePaddleW = 80 * scale;
-  paddleW = basePaddleW;
   paddleH = 12 * scale;
   paddleY = H - 40 * scale;
   baseBallR = 8 * scale;
@@ -267,41 +331,93 @@ function resize() {
   brickPad = 6 * scale;
   brickOffsetTop = 50 * scale;
   brickOffsetLeft = 20 * scale;
-  brickW = (W - brickOffsetLeft * 2 - brickPad * (brickCols - 1)) / brickCols;
   brickH = 18 * scale;
+  baseSpeed = 4 * scale;
 }
 
 function createBall(x, y, dx, dy) {
   return { x, y, dx, dy, sticky: false };
 }
 
-function initGame() {
+function generateBrickPattern(rows, cols, pattern) {
+  const grid = [];
+  for (let r = 0; r < rows; r++) {
+    grid[r] = [];
+    for (let c = 0; c < cols; c++) {
+      let alive = true;
+      switch(pattern) {
+        case 'checkerboard':
+          alive = (r + c) % 2 === 0;
+          break;
+        case 'pyramid':
+          const mid = Math.floor(cols / 2);
+          const dist = Math.abs(c - mid + 0.5);
+          alive = dist <= (rows - r);
+          break;
+        case 'fortress':
+          // Outer walls + inner structure
+          if (r === 0 || r === rows - 1 || c === 0 || c === cols - 1) {
+            alive = true;
+          } else if (r === 2 && c > 1 && c < cols - 2) {
+            alive = true;
+          } else if (r > 2 && r < rows - 2 && (c === 2 || c === cols - 3)) {
+            alive = true;
+          } else {
+            alive = (r + c) % 3 === 0;
+          }
+          break;
+        default: // simple - all bricks
+          alive = true;
+      }
+      grid[r][c] = { x: 0, y: 0, alive };
+    }
+  }
+  return grid;
+}
+
+function countAliveBricks() {
+  let count = 0;
+  for (let r = 0; r < brickRows; r++) {
+    for (let c = 0; c < brickCols; c++) {
+      if (bricks[r] && bricks[r][c] && bricks[r][c].alive) count++;
+    }
+  }
+  return count;
+}
+
+function initLevel() {
   resize();
+  const config = LEVEL_CONFIGS[currentLevel];
+  brickRows = config.rows;
+  brickCols = config.cols;
+  brickW = (W - brickOffsetLeft * 2 - brickPad * (brickCols - 1)) / brickCols;
+  
+  paddleW = basePaddleW * config.paddleMult;
   paddleX = (W - paddleW) / 2;
-  paddleW = basePaddleW;
   ballR = baseBallR;
   
-  // Ball starts sticky on paddle
+  const speed = baseSpeed * config.speedMult;
   ballSticky = true;
-  balls = [createBall(paddleX + paddleW / 2, paddleY - ballR - 2, 3 * scale * (Math.random() > 0.5 ? 1 : -1), -4 * scale)];
+  balls = [createBall(paddleX + paddleW / 2, paddleY - ballR - 2, 3 * scale * (Math.random() > 0.5 ? 1 : -1), -speed)];
   balls[0].sticky = true;
   
-  score = 0; lives = 3; gameOver = false; won = false;
   powerups = [];
   activePowerups = {};
   lasers = [];
   laserActive = false;
   
-  bricks = [];
-  for (let r = 0; r < brickRows; r++) {
-    bricks[r] = [];
-    for (let c = 0; c < brickCols; c++) {
-      bricks[r][c] = { x: 0, y: 0, alive: true };
-    }
-  }
+  bricks = generateBrickPattern(brickRows, brickCols, config.pattern);
 }
 
-// Launch ball from paddle
+function initGame() {
+  gameOver = false;
+  won = false;
+  currentLevel = 1;
+  score = 0;
+  lives = 3;
+  initLevel();
+}
+
 function launchBall() {
   if (ballSticky && balls.length > 0 && balls[0].sticky) {
     balls[0].sticky = false;
@@ -309,29 +425,24 @@ function launchBall() {
   }
 }
 
-// Power-up functions
 function spawnPowerup(x, y) {
-  if (Math.random() > 0.25) return; // 25% chance to spawn
+  if (Math.random() > 0.25) return;
   const types = Object.keys(POWERUP_TYPES);
   const type = types[Math.floor(Math.random() * types.length)];
-  powerups.push({
-    x, y,
-    type,
-    size: 24 * scale,
-    speed: 2 * scale
-  });
+  powerups.push({ x, y, type, size: 24 * scale, speed: 2 * scale });
 }
 
 function activatePowerup(type) {
   const now = Date.now();
   const config = POWERUP_TYPES[type];
+  const levelConfig = LEVEL_CONFIGS[currentLevel];
   
   switch(type) {
     case 'MULTI_BALL':
       if (balls.length > 0) {
         const b = balls[0];
-        balls.push(createBall(b.x, b.y, -3 * scale, -4 * scale));
-        balls.push(createBall(b.x, b.y, 3 * scale, -4 * scale));
+        balls.push(createBall(b.x, b.y, -3 * scale, -baseSpeed * levelConfig.speedMult));
+        balls.push(createBall(b.x, b.y, 3 * scale, -baseSpeed * levelConfig.speedMult));
       }
       break;
     case 'LASER':
@@ -349,12 +460,12 @@ function activatePowerup(type) {
       delete activePowerups.BIG_BALL;
       break;
     case 'WIDE_PADDLE':
-      paddleW = basePaddleW * 1.5;
+      paddleW = basePaddleW * LEVEL_CONFIGS[currentLevel].paddleMult * 1.5;
       activePowerups.WIDE_PADDLE = now + config.duration;
       delete activePowerups.NARROW_PADDLE;
       break;
     case 'NARROW_PADDLE':
-      paddleW = basePaddleW * 0.6;
+      paddleW = basePaddleW * LEVEL_CONFIGS[currentLevel].paddleMult * 0.6;
       activePowerups.NARROW_PADDLE = now + config.duration;
       delete activePowerups.WIDE_PADDLE;
       break;
@@ -363,6 +474,7 @@ function activatePowerup(type) {
 
 function updatePowerups() {
   const now = Date.now();
+  const levelConfig = LEVEL_CONFIGS[currentLevel];
   
   if (activePowerups.LASER && now > activePowerups.LASER) {
     laserActive = false;
@@ -377,11 +489,11 @@ function updatePowerups() {
     delete activePowerups.SMALL_BALL;
   }
   if (activePowerups.WIDE_PADDLE && now > activePowerups.WIDE_PADDLE) {
-    paddleW = basePaddleW;
+    paddleW = basePaddleW * levelConfig.paddleMult;
     delete activePowerups.WIDE_PADDLE;
   }
   if (activePowerups.NARROW_PADDLE && now > activePowerups.NARROW_PADDLE) {
-    paddleW = basePaddleW;
+    paddleW = basePaddleW * levelConfig.paddleMult;
     delete activePowerups.NARROW_PADDLE;
   }
   
@@ -396,9 +508,7 @@ function updatePowerups() {
       continue;
     }
     
-    if (p.y > H) {
-      powerups.splice(i, 1);
-    }
+    if (p.y > H) powerups.splice(i, 1);
   }
 }
 
@@ -430,14 +540,12 @@ function updateLasers() {
           spawnPowerup(b.x + brickW / 2, b.y + brickH);
           lasers.splice(i, 1);
           hit = true;
-          if (score === brickRows * brickCols) { won = true; gameOver = true; showGameOverScreen(); }
+          if (countAliveBricks() === 0) showLevelComplete();
         }
       }
     }
     
-    if (!hit && l.y + l.height < 0) {
-      lasers.splice(i, 1);
-    }
+    if (!hit && l.y + l.height < 0) lasers.splice(i, 1);
   }
 }
 
@@ -479,7 +587,6 @@ function drawPowerups() {
     const config = POWERUP_TYPES[p.type];
     ctx.save();
     ctx.translate(p.x, p.y);
-    // Scale SVG path (original is ~77x77) to fit power-up size
     const svgScale = p.size / 77;
     ctx.scale(svgScale, svgScale);
     ctx.fillStyle = config.color;
@@ -490,9 +597,7 @@ function drawPowerups() {
 
 function drawLasers() {
   ctx.fillStyle = '#ff00ff';
-  lasers.forEach(l => {
-    ctx.fillRect(l.x, l.y, l.width, l.height);
-  });
+  lasers.forEach(l => ctx.fillRect(l.x, l.y, l.width, l.height));
 }
 
 function drawHUD() {
@@ -502,7 +607,10 @@ function drawHUD() {
   ctx.fillText(`Score: ${score}`, 10, 24 * scale);
   ctx.fillText(`Lives: ${lives}`, W - 80 * scale, 24 * scale);
   
-  // Show "Click to Launch" when ball is sticky
+  // Level display
+  ctx.textAlign = 'center';
+  ctx.fillText(`Level ${currentLevel}`, W / 2, 24 * scale);
+  
   if (ballSticky && balls.length > 0 && balls[0].sticky) {
     ctx.fillStyle = ACCENT;
     ctx.font = `${16 * scale}px sans-serif`;
@@ -536,7 +644,7 @@ function collisionDetection() {
             b.alive = false;
             score++;
             spawnPowerup(b.x + brickW / 2, b.y + brickH);
-            if (score === brickRows * brickCols) { won = true; gameOver = true; showGameOverScreen(); }
+            if (countAliveBricks() === 0) showLevelComplete();
           }
         }
       });
@@ -545,15 +653,16 @@ function collisionDetection() {
 }
 
 function update() {
-  if (gameOver || !gameStarted) return;
+  if (gameOver || !gameStarted || levelTransition) return;
   
   updatePowerups();
   updateLasers();
   
+  const levelConfig = LEVEL_CONFIGS[currentLevel];
+  
   for (let i = balls.length - 1; i >= 0; i--) {
     const ball = balls[i];
     
-    // If ball is sticky, keep it on paddle
     if (ball.sticky) {
       ball.x = paddleX + paddleW / 2;
       ball.y = paddleY - ballR - 2;
@@ -572,9 +681,7 @@ function update() {
       ball.dx = hit * 6 * scale;
     }
     
-    if (ball.y - ballR > H) {
-      balls.splice(i, 1);
-    }
+    if (ball.y - ballR > H) balls.splice(i, 1);
   }
   
   if (balls.length === 0) {
@@ -583,9 +690,9 @@ function update() {
       gameOver = true; 
       showGameOverScreen(); 
     } else { 
-      // Reset ball sticky on paddle after losing life
       ballSticky = true;
-      balls = [createBall(paddleX + paddleW / 2, paddleY - ballR - 2, 3 * scale * (Math.random() > 0.5 ? 1 : -1), -4 * scale)];
+      const speed = baseSpeed * levelConfig.speedMult;
+      balls = [createBall(paddleX + paddleW / 2, paddleY - ballR - 2, 3 * scale * (Math.random() > 0.5 ? 1 : -1), -speed)];
       balls[0].sticky = true;
     }
   }
@@ -610,31 +717,24 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-// Controls
 function movePaddle(x) {
-  // Adjust for canvas offset
   const rect = canvas.getBoundingClientRect();
   const canvasX = x - rect.left;
   paddleX = canvasX - paddleW / 2;
   if (paddleX < 0) paddleX = 0;
   if (paddleX + paddleW > W) paddleX = W - paddleW;
   
-  // Move sticky ball with paddle
   if (ballSticky && balls.length > 0 && balls[0].sticky) {
     balls[0].x = paddleX + paddleW / 2;
   }
 }
 
-// Mouse controls
 canvas.addEventListener('mousemove', e => movePaddle(e.clientX));
-
-// Touch controls for mobile
 canvas.addEventListener('touchmove', e => { 
   e.preventDefault(); 
   movePaddle(e.touches[0].clientX); 
 }, { passive: false });
 
-// Click/tap to launch ball or shoot laser
 function handleClick() {
   if (ballSticky && balls.length > 0 && balls[0].sticky) {
     launchBall();
@@ -658,7 +758,6 @@ document.addEventListener('keydown', e => {
 
 window.addEventListener('resize', resize);
 
-// Initialize
 resize();
 loop();
 </script>
