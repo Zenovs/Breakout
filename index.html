@@ -9,6 +9,42 @@
     html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0b0b; }
     canvas { display: block; margin: auto; touch-action: none; }
     
+    /* Start Screen Overlay */
+    #startOverlay {
+      display: flex;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(11, 11, 11, 0.95);
+      z-index: 100;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', monospace;
+      color: #6cff00;
+      cursor: pointer;
+    }
+    #startOverlay.hidden { display: none; }
+    #startOverlay h1 {
+      font-size: 3rem;
+      text-transform: uppercase;
+      letter-spacing: 0.3rem;
+      margin-bottom: 2rem;
+      text-shadow: 0 0 20px #6cff00, 0 0 40px #6cff00;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    #startOverlay .click-text {
+      font-size: 1.5rem;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    
     /* Game Over Overlay */
     #gameOverOverlay {
       display: none;
@@ -73,6 +109,11 @@
   </style>
 </head>
 <body>
+<div id="startOverlay">
+  <h1>Breakout</h1>
+  <div class="click-text">Click to Start</div>
+</div>
+
 <canvas id="game"></canvas>
 
 <div id="gameOverOverlay">
@@ -92,25 +133,35 @@ const ctx = canvas.getContext('2d');
 const ACCENT = '#6cff00';
 const BG = '#0b0b0b';
 
+// Mobile detection
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                 ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
 let W, H, scale;
 let paddleW, paddleH, paddleX, paddleY, basePaddleW;
 let ballR, baseBallR;
 let brickRows = 5, brickCols = 8, brickW, brickH, brickPad, brickOffsetTop, brickOffsetLeft;
 let bricks = [];
 let score = 0, lives = 3, gameOver = false, won = false;
+let gameStarted = false;
+let ballSticky = true; // Ball sticks to paddle
 
 // Multi-ball support
 let balls = [];
 
 // Power-up system
 const POWERUP_TYPES = {
-  MULTI_BALL: { color: '#ff6b6b', icon: '⚪⚪', duration: 0 },
-  LASER: { color: '#ff00ff', icon: '🔫', duration: 8000 },
-  BIG_BALL: { color: '#00ffff', icon: '⬤', duration: 10000 },
-  SMALL_BALL: { color: '#ff8800', icon: '•', duration: 10000 },
-  WIDE_PADDLE: { color: '#00ff88', icon: '▬▬', duration: 10000 },
-  NARROW_PADDLE: { color: '#ff4444', icon: '▬', duration: 10000 }
+  MULTI_BALL: { color: '#ff6b6b', duration: 0 },
+  LASER: { color: '#ff00ff', duration: 8000 },
+  BIG_BALL: { color: '#00ffff', duration: 10000 },
+  SMALL_BALL: { color: '#ff8800', duration: 10000 },
+  WIDE_PADDLE: { color: '#00ff88', duration: 10000 },
+  NARROW_PADDLE: { color: '#ff4444', duration: 10000 }
 };
+
+// SVG Path for power-up S-logo
+const POWERUP_SVG_PATH = new Path2D('M38.7837 0C17.3672 0 0 17.3672 0 38.7837C0 60.2003 17.3672 77.5675 38.7837 77.5675C60.2062 77.5675 77.5675 60.2003 77.5675 38.7837C77.5675 17.3612 60.2062 0 38.7837 0ZM35.4766 65.8469L23.9934 66.8859L24.1359 50.2372L35.5894 52.4222L35.4766 65.8469ZM50.8072 64.4575L39.3241 65.4966L39.4309 53.2356L50.8844 55.5334L50.8072 64.4575ZM61.7975 52.6834L21.9984 44.8341C16.0609 42.9103 11.3109 39.5022 11.3822 31.4034C11.5009 17.5394 23.2037 10.5212 35.3519 9.42281C48.1591 8.265 59.4403 12.1956 59.8144 26.7662L42.6253 28.3219C42.9756 26.0241 41.9959 24.5991 40.5175 23.7262C39.0391 22.7703 36.9787 22.5387 35.1559 22.6991C32.6741 22.9247 28.6187 23.9637 28.595 27.3244C28.8919 31.5816 37.3112 31.7419 45.6356 33.3391C53.9659 34.9362 62.1953 38.1366 62.1003 49.1387C62.0884 50.3797 61.9816 51.5553 61.7975 52.6834Z');
+
 let powerups = [];
 let activePowerups = {};
 let lasers = [];
@@ -167,11 +218,37 @@ document.getElementById('playerName').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') document.getElementById('submitScore').click();
 });
 
+// Start screen handler
+document.getElementById('startOverlay').addEventListener('click', () => {
+  document.getElementById('startOverlay').classList.add('hidden');
+  gameStarted = true;
+  initGame();
+});
+
 function resize() {
-  W = window.innerWidth;
-  H = window.innerHeight;
+  // Responsive canvas - adapt to screen width
+  const maxWidth = isMobile ? window.innerWidth : Math.min(window.innerWidth, 800);
+  const maxHeight = window.innerHeight;
+  
+  // Maintain aspect ratio roughly 3:4
+  const aspectRatio = 3 / 4;
+  
+  if (maxWidth / maxHeight < aspectRatio) {
+    W = maxWidth;
+    H = W / aspectRatio;
+  } else {
+    H = maxHeight;
+    W = H * aspectRatio;
+  }
+  
   canvas.width = W;
   canvas.height = H;
+  
+  // Center canvas
+  canvas.style.position = 'absolute';
+  canvas.style.left = (window.innerWidth - W) / 2 + 'px';
+  canvas.style.top = (window.innerHeight - H) / 2 + 'px';
+  
   scale = Math.min(W / 480, H / 640);
   basePaddleW = 80 * scale;
   paddleW = basePaddleW;
@@ -187,7 +264,7 @@ function resize() {
 }
 
 function createBall(x, y, dx, dy) {
-  return { x, y, dx, dy };
+  return { x, y, dx, dy, sticky: false };
 }
 
 function initGame() {
@@ -196,7 +273,10 @@ function initGame() {
   paddleW = basePaddleW;
   ballR = baseBallR;
   
-  balls = [createBall(W / 2, paddleY - ballR - 2, 3 * scale * (Math.random() > 0.5 ? 1 : -1), -4 * scale)];
+  // Ball starts sticky on paddle
+  ballSticky = true;
+  balls = [createBall(paddleX + paddleW / 2, paddleY - ballR - 2, 3 * scale * (Math.random() > 0.5 ? 1 : -1), -4 * scale)];
+  balls[0].sticky = true;
   
   score = 0; lives = 3; gameOver = false; won = false;
   powerups = [];
@@ -213,6 +293,14 @@ function initGame() {
   }
 }
 
+// Launch ball from paddle
+function launchBall() {
+  if (ballSticky && balls.length > 0 && balls[0].sticky) {
+    balls[0].sticky = false;
+    ballSticky = false;
+  }
+}
+
 // Power-up functions
 function spawnPowerup(x, y) {
   if (Math.random() > 0.25) return; // 25% chance to spawn
@@ -221,8 +309,7 @@ function spawnPowerup(x, y) {
   powerups.push({
     x, y,
     type,
-    width: 30 * scale,
-    height: 15 * scale,
+    size: 24 * scale,
     speed: 2 * scale
   });
 }
@@ -233,7 +320,6 @@ function activatePowerup(type) {
   
   switch(type) {
     case 'MULTI_BALL':
-      // Spawn 2 extra balls from first ball position
       if (balls.length > 0) {
         const b = balls[0];
         balls.push(createBall(b.x, b.y, -3 * scale, -4 * scale));
@@ -270,7 +356,6 @@ function activatePowerup(type) {
 function updatePowerups() {
   const now = Date.now();
   
-  // Check expired powerups
   if (activePowerups.LASER && now > activePowerups.LASER) {
     laserActive = false;
     delete activePowerups.LASER;
@@ -292,20 +377,17 @@ function updatePowerups() {
     delete activePowerups.NARROW_PADDLE;
   }
   
-  // Update falling powerups
   for (let i = powerups.length - 1; i >= 0; i--) {
     const p = powerups[i];
     p.y += p.speed;
     
-    // Check paddle collision
-    if (p.y + p.height >= paddleY && p.y <= paddleY + paddleH &&
-        p.x + p.width >= paddleX && p.x <= paddleX + paddleW) {
+    if (p.y + p.size >= paddleY && p.y <= paddleY + paddleH &&
+        p.x + p.size >= paddleX && p.x <= paddleX + paddleW) {
       activatePowerup(p.type);
       powerups.splice(i, 1);
       continue;
     }
     
-    // Remove if off screen
     if (p.y > H) {
       powerups.splice(i, 1);
     }
@@ -328,7 +410,6 @@ function updateLasers() {
     const l = lasers[i];
     l.y -= l.speed;
     
-    // Check brick collision
     let hit = false;
     for (let r = 0; r < brickRows && !hit; r++) {
       for (let c = 0; c < brickCols && !hit; c++) {
@@ -346,7 +427,6 @@ function updateLasers() {
       }
     }
     
-    // Remove if off screen
     if (!hit && l.y + l.height < 0) {
       lasers.splice(i, 1);
     }
@@ -370,7 +450,6 @@ function drawPaddle() {
   ctx.fillStyle = ACCENT;
   ctx.fillRect(paddleX, paddleY, paddleW, paddleH);
   
-  // Draw laser indicator
   if (laserActive) {
     ctx.fillStyle = '#ff00ff';
     ctx.fillRect(paddleX + paddleW / 2 - 3 * scale, paddleY - 5 * scale, 6 * scale, 5 * scale);
@@ -390,12 +469,14 @@ function drawBalls() {
 function drawPowerups() {
   powerups.forEach(p => {
     const config = POWERUP_TYPES[p.type];
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    // Scale SVG path (original is ~77x77) to fit power-up size
+    const svgScale = p.size / 77;
+    ctx.scale(svgScale, svgScale);
     ctx.fillStyle = config.color;
-    ctx.fillRect(p.x, p.y, p.width, p.height);
-    ctx.fillStyle = '#fff';
-    ctx.font = `${10 * scale}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText(config.icon, p.x + p.width / 2, p.y + p.height / 2 + 3 * scale);
+    ctx.fill(POWERUP_SVG_PATH);
+    ctx.restore();
   });
 }
 
@@ -413,14 +494,22 @@ function drawHUD() {
   ctx.fillText(`Score: ${score}`, 10, 24 * scale);
   ctx.fillText(`Lives: ${lives}`, W - 80 * scale, 24 * scale);
   
-  // Draw active powerup indicators
+  // Show "Click to Launch" when ball is sticky
+  if (ballSticky && balls.length > 0 && balls[0].sticky) {
+    ctx.fillStyle = ACCENT;
+    ctx.font = `${16 * scale}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(isMobile ? 'Tap to Launch' : 'Click to Launch', W / 2, H / 2);
+  }
+  
   let y = 45 * scale;
   const now = Date.now();
   for (const [type, expiry] of Object.entries(activePowerups)) {
     const remaining = Math.ceil((expiry - now) / 1000);
     if (remaining > 0) {
       ctx.fillStyle = POWERUP_TYPES[type].color;
-      ctx.fillText(`${POWERUP_TYPES[type].icon} ${remaining}s`, 10, y);
+      ctx.textAlign = 'left';
+      ctx.fillText(`${type.replace('_', ' ')} ${remaining}s`, 10, y);
       y += 18 * scale;
     }
   }
@@ -448,42 +537,48 @@ function collisionDetection() {
 }
 
 function update() {
-  if (gameOver) return;
+  if (gameOver || !gameStarted) return;
   
   updatePowerups();
   updateLasers();
   
-  // Update all balls
   for (let i = balls.length - 1; i >= 0; i--) {
     const ball = balls[i];
+    
+    // If ball is sticky, keep it on paddle
+    if (ball.sticky) {
+      ball.x = paddleX + paddleW / 2;
+      ball.y = paddleY - ballR - 2;
+      continue;
+    }
+    
     ball.x += ball.dx;
     ball.y += ball.dy;
     
-    // walls
     if (ball.x + ballR > W || ball.x - ballR < 0) ball.dx = -ball.dx;
     if (ball.y - ballR < 0) ball.dy = -ball.dy;
     
-    // paddle
     if (ball.y + ballR >= paddleY && ball.x > paddleX && ball.x < paddleX + paddleW) {
       ball.dy = -Math.abs(ball.dy);
       let hit = (ball.x - paddleX) / paddleW - 0.5;
       ball.dx = hit * 6 * scale;
     }
     
-    // bottom - remove ball
     if (ball.y - ballR > H) {
       balls.splice(i, 1);
     }
   }
   
-  // If no balls left, lose a life
   if (balls.length === 0) {
     lives--;
     if (lives <= 0) { 
       gameOver = true; 
       showGameOverScreen(); 
     } else { 
-      balls = [createBall(W / 2, paddleY - ballR - 2, 3 * scale * (Math.random() > 0.5 ? 1 : -1), -4 * scale)];
+      // Reset ball sticky on paddle after losing life
+      ballSticky = true;
+      balls = [createBall(paddleX + paddleW / 2, paddleY - ballR - 2, 3 * scale * (Math.random() > 0.5 ? 1 : -1), -4 * scale)];
+      balls[0].sticky = true;
     }
   }
   
@@ -509,21 +604,54 @@ function loop() {
 
 // Controls
 function movePaddle(x) {
-  paddleX = x - paddleW / 2;
+  // Adjust for canvas offset
+  const rect = canvas.getBoundingClientRect();
+  const canvasX = x - rect.left;
+  paddleX = canvasX - paddleW / 2;
   if (paddleX < 0) paddleX = 0;
   if (paddleX + paddleW > W) paddleX = W - paddleW;
+  
+  // Move sticky ball with paddle
+  if (ballSticky && balls.length > 0 && balls[0].sticky) {
+    balls[0].x = paddleX + paddleW / 2;
+  }
 }
-canvas.addEventListener('mousemove', e => movePaddle(e.clientX));
-canvas.addEventListener('touchmove', e => { e.preventDefault(); movePaddle(e.touches[0].clientX); }, { passive: false });
 
-// Laser shooting
-canvas.addEventListener('click', shootLaser);
-canvas.addEventListener('touchstart', e => { if (laserActive) shootLaser(); });
-document.addEventListener('keydown', e => { if (e.code === 'Space' && laserActive) shootLaser(); });
+// Mouse controls
+canvas.addEventListener('mousemove', e => movePaddle(e.clientX));
+
+// Touch controls for mobile
+canvas.addEventListener('touchmove', e => { 
+  e.preventDefault(); 
+  movePaddle(e.touches[0].clientX); 
+}, { passive: false });
+
+// Click/tap to launch ball or shoot laser
+function handleClick() {
+  if (ballSticky && balls.length > 0 && balls[0].sticky) {
+    launchBall();
+  } else if (laserActive) {
+    shootLaser();
+  }
+}
+
+canvas.addEventListener('click', handleClick);
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  handleClick();
+}, { passive: false });
+
+document.addEventListener('keydown', e => { 
+  if (e.code === 'Space') {
+    e.preventDefault();
+    handleClick();
+  }
+});
 
 window.addEventListener('resize', resize);
 
-initGame();
+// Initialize
+resize();
 loop();
 </script>
 </body>
