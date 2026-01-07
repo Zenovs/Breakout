@@ -234,11 +234,11 @@ document.getElementById('startOverlay').addEventListener('click', () => {
 });
 
 function resize() {
-  // Responsive canvas - adapt to screen width
-  const maxWidth = isMobile ? window.innerWidth : Math.min(window.innerWidth, 800);
+  // Fill 100% of parent container/iframe using window dimensions
+  const maxWidth = window.innerWidth;
   const maxHeight = window.innerHeight;
   
-  // Maintain aspect ratio roughly 3:4
+  // Maintain aspect ratio roughly 3:4 but maximize within container
   const aspectRatio = 3 / 4;
   
   if (maxWidth / maxHeight < aspectRatio) {
@@ -252,7 +252,7 @@ function resize() {
   canvas.width = W;
   canvas.height = H;
   
-  // Center canvas
+  // Center canvas within container
   canvas.style.position = 'absolute';
   canvas.style.left = (window.innerWidth - W) / 2 + 'px';
   canvas.style.top = (window.innerHeight - H) / 2 + 'px';
