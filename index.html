@@ -8,10 +8,84 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0b0b; }
     canvas { display: block; margin: auto; touch-action: none; }
+    
+    /* Game Over Overlay */
+    #gameOverOverlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(11, 11, 11, 0.95);
+      z-index: 100;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: sans-serif;
+      color: #6cff00;
+    }
+    #gameOverOverlay.show { display: flex; }
+    #gameOverOverlay h1 { font-size: 2.5rem; margin-bottom: 1rem; }
+    #gameOverOverlay .final-score { font-size: 1.5rem; margin-bottom: 1.5rem; }
+    #gameOverOverlay input {
+      background: #0b0b0b;
+      border: 2px solid #6cff00;
+      color: #6cff00;
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+      width: 200px;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    #gameOverOverlay input::placeholder { color: #3a7a00; }
+    #gameOverOverlay button {
+      background: #6cff00;
+      color: #0b0b0b;
+      border: none;
+      padding: 0.75rem 2rem;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      margin-bottom: 2rem;
+    }
+    #gameOverOverlay button:hover { background: #5de000; }
+    
+    /* Leaderboard */
+    #leaderboard {
+      background: #0b0b0b;
+      border: 2px solid #6cff00;
+      padding: 1rem 1.5rem;
+      max-width: 280px;
+      width: 90%;
+    }
+    #leaderboard h2 { font-size: 1.2rem; margin-bottom: 0.75rem; text-align: center; }
+    #leaderboard ol {
+      list-style-position: inside;
+      padding: 0;
+    }
+    #leaderboard li {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.3rem 0;
+      border-bottom: 1px solid #1a3300;
+    }
+    #leaderboard li:last-child { border-bottom: none; }
+    #leaderboard .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    #leaderboard .score-val { font-weight: bold; margin-left: 1rem; }
   </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+
+<div id="gameOverOverlay">
+  <h1 id="gameOverTitle">Game Over</h1>
+  <div class="final-score">Score: <span id="finalScore">0</span></div>
+  <input type="text" id="playerName" placeholder="Enter your name" maxlength="15">
+  <button id="submitScore">Save & Play Again</button>
+  <div id="leaderboard">
+    <h2>🏆 Top 10 High Scores</h2>
+    <ol id="highScoreList"></ol>
+  </div>
+</div>
+
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -24,6 +98,57 @@ let ballR, ballX, ballY, ballDX, ballDY;
 let brickRows = 5, brickCols = 8, brickW, brickH, brickPad, brickOffsetTop, brickOffsetLeft;
 let bricks = [];
 let score = 0, lives = 3, gameOver = false, won = false;
+
+// High Score Functions
+function getHighScores() {
+  const data = localStorage.getItem('breakoutHighScores');
+  return data ? JSON.parse(data) : [];
+}
+
+function saveHighScore(name, playerScore) {
+  const scores = getHighScores();
+  scores.push({ name: name || 'Anonymous', score: playerScore });
+  scores.sort((a, b) => b.score - a.score);
+  const top10 = scores.slice(0, 10);
+  localStorage.setItem('breakoutHighScores', JSON.stringify(top10));
+  return top10;
+}
+
+function renderLeaderboard() {
+  const scores = getHighScores();
+  const list = document.getElementById('highScoreList');
+  if (scores.length === 0) {
+    list.innerHTML = '<li style="justify-content:center;">No scores yet!</li>';
+  } else {
+    list.innerHTML = scores.map((s, i) => 
+      `<li><span class="name">${i + 1}. ${s.name}</span><span class="score-val">${s.score}</span></li>`
+    ).join('');
+  }
+}
+
+function showGameOverScreen() {
+  document.getElementById('gameOverTitle').textContent = won ? 'You Win!' : 'Game Over';
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('playerName').value = '';
+  renderLeaderboard();
+  document.getElementById('gameOverOverlay').classList.add('show');
+  document.getElementById('playerName').focus();
+}
+
+function hideGameOverScreen() {
+  document.getElementById('gameOverOverlay').classList.remove('show');
+}
+
+document.getElementById('submitScore').addEventListener('click', () => {
+  const name = document.getElementById('playerName').value.trim();
+  saveHighScore(name, score);
+  hideGameOverScreen();
+  initGame();
+});
+
+document.getElementById('playerName').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') document.getElementById('submitScore').click();
+});
 
 function resize() {
   W = window.innerWidth;
@@ -92,16 +217,6 @@ function drawHUD() {
   ctx.fillText(`Lives: ${lives}`, W - 80 * scale, 24 * scale);
 }
 
-function drawMessage(msg) {
-  ctx.fillStyle = ACCENT;
-  ctx.font = `bold ${28 * scale}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.fillText(msg, W / 2, H / 2);
-  ctx.font = `${16 * scale}px sans-serif`;
-  ctx.fillText('Tap or click to restart', W / 2, H / 2 + 36 * scale);
-  ctx.textAlign = 'left';
-}
-
 function collisionDetection() {
   for (let r = 0; r < brickRows; r++) {
     for (let c = 0; c < brickCols; c++) {
@@ -111,7 +226,7 @@ function collisionDetection() {
         ballDY = -ballDY;
         b.alive = false;
         score++;
-        if (score === brickRows * brickCols) { won = true; gameOver = true; }
+        if (score === brickRows * brickCols) { won = true; gameOver = true; showGameOverScreen(); }
       }
     }
   }
@@ -133,7 +248,7 @@ function update() {
   // bottom
   if (ballY - ballR > H) {
     lives--;
-    if (lives <= 0) { gameOver = true; }
+    if (lives <= 0) { gameOver = true; showGameOverScreen(); }
     else { ballX = W / 2; ballY = paddleY - ballR - 2; ballDX = 3 * scale * (Math.random() > 0.5 ? 1 : -1); ballDY = -4 * scale; }
   }
   collisionDetection();
@@ -146,7 +261,6 @@ function draw() {
   drawPaddle();
   drawBall();
   drawHUD();
-  if (gameOver) drawMessage(won ? 'You Win!' : 'Game Over');
 }
 
 function loop() {
@@ -163,8 +277,6 @@ function movePaddle(x) {
 }
 canvas.addEventListener('mousemove', e => movePaddle(e.clientX));
 canvas.addEventListener('touchmove', e => { e.preventDefault(); movePaddle(e.touches[0].clientX); }, { passive: false });
-canvas.addEventListener('click', () => { if (gameOver) initGame(); });
-canvas.addEventListener('touchend', () => { if (gameOver) initGame(); });
 window.addEventListener('resize', resize);
 
 initGame();
