@@ -24,6 +24,7 @@ let ballR, ballX, ballY, ballDX, ballDY;
 let brickRows = 5, brickCols = 8, brickW, brickH, brickPad, brickOffsetTop, brickOffsetLeft;
 let bricks = [];
 let score = 0, lives = 3, gameOver = false, won = false;
+let ballStuck = true; // Ball sticks to paddle until click/tap
 
 function resize() {
   W = window.innerWidth;
@@ -45,10 +46,11 @@ function resize() {
 function initGame() {
   resize();
   paddleX = (W - paddleW) / 2;
-  ballX = W / 2;
+  ballX = paddleX + paddleW / 2;
   ballY = paddleY - ballR - 2;
-  ballDX = 3 * scale * (Math.random() > 0.5 ? 1 : -1);
-  ballDY = -4 * scale;
+  ballDX = 0;
+  ballDY = 0;
+  ballStuck = true;
   score = 0; lives = 3; gameOver = false; won = false;
   bricks = [];
   for (let r = 0; r < brickRows; r++) {
@@ -119,6 +121,12 @@ function collisionDetection() {
 
 function update() {
   if (gameOver) return;
+  // Ball follows paddle while stuck
+  if (ballStuck) {
+    ballX = paddleX + paddleW / 2;
+    ballY = paddleY - ballR - 2;
+    return;
+  }
   ballX += ballDX;
   ballY += ballDY;
   // walls
@@ -134,7 +142,7 @@ function update() {
   if (ballY - ballR > H) {
     lives--;
     if (lives <= 0) { gameOver = true; }
-    else { ballX = W / 2; ballY = paddleY - ballR - 2; ballDX = 3 * scale * (Math.random() > 0.5 ? 1 : -1); ballDY = -4 * scale; }
+    else { ballStuck = true; } // Ball sticks to paddle after losing a life
   }
   collisionDetection();
 }
@@ -163,8 +171,16 @@ function movePaddle(x) {
 }
 canvas.addEventListener('mousemove', e => movePaddle(e.clientX));
 canvas.addEventListener('touchmove', e => { e.preventDefault(); movePaddle(e.touches[0].clientX); }, { passive: false });
-canvas.addEventListener('click', () => { if (gameOver) initGame(); });
-canvas.addEventListener('touchend', () => { if (gameOver) initGame(); });
+function launchBall() {
+  if (gameOver) { initGame(); return; }
+  if (ballStuck) {
+    ballStuck = false;
+    ballDX = 3 * scale * (Math.random() > 0.5 ? 1 : -1);
+    ballDY = -4 * scale;
+  }
+}
+canvas.addEventListener('click', launchBall);
+canvas.addEventListener('touchend', launchBall);
 window.addEventListener('resize', resize);
 
 initGame();
