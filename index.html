@@ -237,16 +237,16 @@ let levelTransition = false;
 let selectedDifficulty = 'normal';
 const DIFFICULTY_BRICK_MULT = { easy: 0.7, normal: 1.0, hard: 1.0 };
 let brickMoveTimer = 0;
-const BRICK_MOVE_INTERVAL = 5000; // 5 seconds for hard mode
+const BRICK_MOVE_INTERVAL = 4000; // 5 seconds for hard mode
 const BRICK_MOVE_AMOUNT = 0.5; // multiplied by scale
 
 // Level configurations
 const LEVEL_CONFIGS = {
-  1: { rows: 3, cols: 6, speedMult: 1.0, paddleMult: 1.0, pattern: 'simple' },
-  2: { rows: 4, cols: 7, speedMult: 1.2, paddleMult: 1.0, pattern: 'simple' },
-  3: { rows: 5, cols: 8, speedMult: 1.4, paddleMult: 1.0, pattern: 'checkerboard' },
-  4: { rows: 6, cols: 8, speedMult: 1.6, paddleMult: 0.75, pattern: 'pyramid' },
-  5: { rows: 7, cols: 8, speedMult: 1.9, paddleMult: 0.6, pattern: 'fortress' }
+  1: { rows: 4, cols: 7, speedMult: 1.0, paddleMult: 1.0, pattern: 'simple' },
+  2: { rows: 5, cols: 8, speedMult: 1.2, paddleMult: 1.0, pattern: 'simple' },
+  3: { rows: 6, cols: 10, speedMult: 1.4, paddleMult: 1.0, pattern: 'checkerboard' },
+  4: { rows: 7, cols: 10, speedMult: 1.6, paddleMult: 0.75, pattern: 'pyramid' },
+  5: { rows: 8, cols: 10, speedMult: 1.9, paddleMult: 0.6, pattern: 'fortress' }
 };
 
 let score = 0, lives = 3, gameOver = false, won = false;
@@ -385,7 +385,7 @@ function resize() {
   canvas.style.top = '0';
   
   scale = Math.min(W / 480, H / 640);
-  basePaddleW = 80 * scale;
+  basePaddleW = 72 * scale;
   paddleH = 12 * scale;
   paddleY = H - 40 * scale;
   baseBallR = 8 * scale;
@@ -394,7 +394,7 @@ function resize() {
   brickOffsetTop = 50 * scale;
   brickOffsetLeft = 20 * scale;
   brickH = 18 * scale;
-  baseSpeed = 4 * scale;
+  baseSpeed = 4.8 * scale;
   
   // Recalculate brick width if game is active
   if (brickCols > 0) {
