@@ -7,7 +7,7 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0b0b; }
-    canvas { display: block; margin: auto; touch-action: none; }
+    canvas { display: block; touch-action: none; }
     
     /* Start Screen Overlay */
     #startOverlay {
@@ -43,6 +43,47 @@
     @keyframes blink {
       0%, 100% { opacity: 1; }
       50% { opacity: 0; }
+    }
+    
+    /* Difficulty Selection Overlay */
+    #difficultyOverlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(11, 11, 11, 0.95);
+      z-index: 100;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', monospace;
+      color: #6cff00;
+    }
+    #difficultyOverlay.show { display: flex; }
+    #difficultyOverlay h2 {
+      font-size: 2rem;
+      margin-bottom: 2rem;
+      text-shadow: 0 0 15px #6cff00;
+    }
+    .diff-btn {
+      background: #0b0b0b;
+      border: 2px solid #6cff00;
+      color: #6cff00;
+      padding: 1rem 3rem;
+      font-size: 1.2rem;
+      font-family: 'Courier New', monospace;
+      cursor: pointer;
+      margin: 0.5rem;
+      min-width: 200px;
+      transition: all 0.2s;
+    }
+    .diff-btn:hover {
+      background: #6cff00;
+      color: #0b0b0b;
+    }
+    .diff-desc {
+      font-size: 0.8rem;
+      color: #4a9900;
+      margin-top: 0.3rem;
     }
     
     /* Game Over Overlay */
@@ -145,6 +186,13 @@
   <div class="click-text">Click to Start</div>
 </div>
 
+<div id="difficultyOverlay">
+  <h2>Select Difficulty</h2>
+  <button class="diff-btn" data-diff="easy">EASY<div class="diff-desc">Fewer bricks</div></button>
+  <button class="diff-btn" data-diff="normal">NORMAL<div class="diff-desc">Standard layout</div></button>
+  <button class="diff-btn" data-diff="hard">HARD<div class="diff-desc">Bricks move down!</div></button>
+</div>
+
 <canvas id="game"></canvas>
 
 <div id="levelOverlay">
@@ -184,6 +232,13 @@ let bricks = [];
 let currentLevel = 1;
 const MAX_LEVEL = 5;
 let levelTransition = false;
+
+// Difficulty system
+let selectedDifficulty = 'normal';
+const DIFFICULTY_BRICK_MULT = { easy: 0.7, normal: 1.0, hard: 1.0 };
+let brickMoveTimer = 0;
+const BRICK_MOVE_INTERVAL = 5000; // 5 seconds for hard mode
+const BRICK_MOVE_AMOUNT = 0.5; // multiplied by scale
 
 // Level configurations
 const LEVEL_CONFIGS = {
@@ -277,6 +332,14 @@ function hideLevelOverlay() {
   levelTransition = false;
 }
 
+function showDifficultyScreen() {
+  document.getElementById('difficultyOverlay').classList.add('show');
+}
+
+function hideDifficultyScreen() {
+  document.getElementById('difficultyOverlay').classList.remove('show');
+}
+
 document.getElementById('levelOverlay').addEventListener('click', () => {
   hideLevelOverlay();
   currentLevel++;
@@ -287,10 +350,7 @@ document.getElementById('submitScore').addEventListener('click', () => {
   const name = document.getElementById('playerName').value.trim();
   saveHighScore(name, score);
   hideGameOverScreen();
-  currentLevel = 1;
-  score = 0;
-  lives = 3;
-  initGame();
+  showDifficultyScreen();
 });
 
 document.getElementById('playerName').addEventListener('keypress', (e) => {
@@ -299,28 +359,30 @@ document.getElementById('playerName').addEventListener('keypress', (e) => {
 
 document.getElementById('startOverlay').addEventListener('click', () => {
   document.getElementById('startOverlay').classList.add('hidden');
-  gameStarted = true;
-  initGame();
+  showDifficultyScreen();
+});
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    selectedDifficulty = btn.dataset.diff;
+    hideDifficultyScreen();
+    gameStarted = true;
+    currentLevel = 1;
+    score = 0;
+    lives = 3;
+    initGame();
+  });
 });
 
 function resize() {
-  const maxWidth = window.innerWidth;
-  const maxHeight = window.innerHeight;
-  const aspectRatio = 3 / 4;
-  
-  if (maxWidth / maxHeight < aspectRatio) {
-    W = maxWidth;
-    H = W / aspectRatio;
-  } else {
-    H = maxHeight;
-    W = H * aspectRatio;
-  }
+  W = window.innerWidth;
+  H = window.innerHeight;
   
   canvas.width = W;
   canvas.height = H;
   canvas.style.position = 'absolute';
-  canvas.style.left = (window.innerWidth - W) / 2 + 'px';
-  canvas.style.top = (window.innerHeight - H) / 2 + 'px';
+  canvas.style.left = '0';
+  canvas.style.top = '0';
   
   scale = Math.min(W / 480, H / 640);
   basePaddleW = 80 * scale;
@@ -333,6 +395,11 @@ function resize() {
   brickOffsetLeft = 20 * scale;
   brickH = 18 * scale;
   baseSpeed = 4 * scale;
+  
+  // Recalculate brick width if game is active
+  if (brickCols > 0) {
+    brickW = (W - brickOffsetLeft * 2 - brickPad * (brickCols - 1)) / brickCols;
+  }
 }
 
 function createBall(x, y, dx, dy) {
@@ -355,7 +422,6 @@ function generateBrickPattern(rows, cols, pattern) {
           alive = dist <= (rows - r);
           break;
         case 'fortress':
-          // Outer walls + inner structure
           if (r === 0 || r === rows - 1 || c === 0 || c === cols - 1) {
             alive = true;
           } else if (r === 2 && c > 1 && c < cols - 2) {
@@ -366,10 +432,10 @@ function generateBrickPattern(rows, cols, pattern) {
             alive = (r + c) % 3 === 0;
           }
           break;
-        default: // simple - all bricks
+        default:
           alive = true;
       }
-      grid[r][c] = { x: 0, y: 0, alive };
+      grid[r][c] = { x: 0, y: 0, alive, baseY: 0 };
     }
   }
   return grid;
@@ -388,8 +454,12 @@ function countAliveBricks() {
 function initLevel() {
   resize();
   const config = LEVEL_CONFIGS[currentLevel];
-  brickRows = config.rows;
-  brickCols = config.cols;
+  
+  // Apply difficulty multiplier to rows/cols for easy mode
+  const mult = DIFFICULTY_BRICK_MULT[selectedDifficulty];
+  brickRows = Math.max(2, Math.round(config.rows * mult));
+  brickCols = Math.max(4, Math.round(config.cols * mult));
+  
   brickW = (W - brickOffsetLeft * 2 - brickPad * (brickCols - 1)) / brickCols;
   
   paddleW = basePaddleW * config.paddleMult;
@@ -405,8 +475,16 @@ function initLevel() {
   activePowerups = {};
   lasers = [];
   laserActive = false;
+  brickMoveTimer = Date.now();
   
   bricks = generateBrickPattern(brickRows, brickCols, config.pattern);
+  
+  // Store base Y positions for hard mode
+  for (let r = 0; r < brickRows; r++) {
+    for (let c = 0; c < brickCols; c++) {
+      bricks[r][c].baseY = brickOffsetTop + r * (brickH + brickPad);
+    }
+  }
 }
 
 function initGame() {
@@ -549,13 +627,38 @@ function updateLasers() {
   }
 }
 
+function updateBrickMovement() {
+  if (selectedDifficulty !== 'hard') return;
+  
+  const now = Date.now();
+  if (now - brickMoveTimer >= BRICK_MOVE_INTERVAL) {
+    brickMoveTimer = now;
+    
+    // Move all bricks down
+    for (let r = 0; r < brickRows; r++) {
+      for (let c = 0; c < brickCols; c++) {
+        if (bricks[r][c].alive) {
+          bricks[r][c].baseY += BRICK_MOVE_AMOUNT * scale * 10;
+          
+          // Check if bricks reached paddle level
+          if (bricks[r][c].baseY + brickH >= paddleY) {
+            gameOver = true;
+            showGameOverScreen();
+            return;
+          }
+        }
+      }
+    }
+  }
+}
+
 function drawBricks() {
   for (let r = 0; r < brickRows; r++) {
     for (let c = 0; c < brickCols; c++) {
       const b = bricks[r][c];
       if (!b.alive) continue;
       b.x = brickOffsetLeft + c * (brickW + brickPad);
-      b.y = brickOffsetTop + r * (brickH + brickPad);
+      b.y = b.baseY !== undefined ? b.baseY : brickOffsetTop + r * (brickH + brickPad);
       ctx.fillStyle = ACCENT;
       ctx.fillRect(b.x, b.y, brickW, brickH);
     }
@@ -607,9 +710,10 @@ function drawHUD() {
   ctx.fillText(`Score: ${score}`, 10, 24 * scale);
   ctx.fillText(`Lives: ${lives}`, W - 80 * scale, 24 * scale);
   
-  // Level display
+  // Level and difficulty display
   ctx.textAlign = 'center';
-  ctx.fillText(`Level ${currentLevel}`, W / 2, 24 * scale);
+  const diffLabel = selectedDifficulty.toUpperCase();
+  ctx.fillText(`Level ${currentLevel} | ${diffLabel}`, W / 2, 24 * scale);
   
   if (ballSticky && balls.length > 0 && balls[0].sticky) {
     ctx.fillStyle = ACCENT;
@@ -657,6 +761,7 @@ function update() {
   
   updatePowerups();
   updateLasers();
+  updateBrickMovement();
   
   const levelConfig = LEVEL_CONFIGS[currentLevel];
   
@@ -756,7 +861,13 @@ document.addEventListener('keydown', e => {
   }
 });
 
-window.addEventListener('resize', resize);
+window.addEventListener('resize', () => {
+  resize();
+  // Recalculate brick positions on resize
+  if (bricks.length > 0 && brickCols > 0) {
+    brickW = (W - brickOffsetLeft * 2 - brickPad * (brickCols - 1)) / brickCols;
+  }
+});
 
 resize();
 loop();
